@@ -1,38 +1,45 @@
-local QBCore = exports['qb-core']:GetCoreObject()
-local spawnedJets = {} -- רשימה לאחסון כל המטוסים והמידע שלהם
-local isInRestrictedAirspace = false -- משתנה לבדיקת מצב המרחב האווירי
-local trackedMissiles = {} -- רשימה לאחסון טילים שנעקבים
-local missileModel = `VEHICLE_MISSILE` -- מודל הטיל, תחליף במודל הנכון במידת הצורך
-local maxDistance = 20.0 -- המרחק המקסימלי שבו המטוסים יתחילו לעזוב את השחקן
+-- qb-dogfight.lua
 
--- פונקציה לעקוב אחרי טילים
+-- Initialize the QBCore object
+local QBCore = exports['qb-core']:GetCoreObject()
+
+-- Tables to store jet information and missile tracking
+local spawnedJets = {}
+local isInRestrictedAirspace = false
+local trackedMissiles = {}
+
+-- Define the missile model and max distance at which jets will disengage
+local missileModel = `VEHICLE_MISSILE`
+local maxDistance = 1500.0 -- Distance at which jets will stop following the player
+
+-- Function to track missiles and create blips for them
 function trackMissile(missile)
     table.insert(trackedMissiles, missile)
     print("Missile tracked:", missile)
 
-    -- יצירת בליפ עבור הטיל
+    -- Create a blip for the missile
     local missileBlip = AddBlipForEntity(missile)
-    SetBlipSprite(missileBlip, 1) -- אייקון של טיל
-    SetBlipColour(missileBlip, 5) -- צבע ירוק
+    SetBlipSprite(missileBlip, 1) -- Missile icon
+    SetBlipColour(missileBlip, 5) -- Green color for the missile
     SetBlipScale(missileBlip, 0.5)
     BeginTextCommandSetBlipName("STRING")
     AddTextComponentString("Missile")
     EndTextCommandSetBlipName(missileBlip)
 
-    -- הסרת הבליפ לאחר שהטיל מתפוצץ
+    -- Remove the blip when the missile is destroyed
     Citizen.CreateThread(function()
         while DoesEntityExist(missile) do
-            Citizen.Wait(1000) -- כל שנייה בודק אם הטיל קיים
+            Citizen.Wait(1000) -- Check every second if the missile exists
         end
-        -- הסרת הבליפ לאחר שהטיל הושמד
+        -- Remove the blip when the missile is destroyed
         RemoveBlip(missileBlip)
     end)
 end
 
--- פונקציה לשדרוג המטוס במלואו
+-- Function to upgrade the jet to its maximum capacity
 function upgradeJet(jet)
     SetVehicleModKit(jet, 0)
-    ToggleVehicleMod(jet, 18, true) -- טורבו
+    ToggleVehicleMod(jet, 18, true) -- Turbo
     SetVehicleMod(jet, 16, GetNumVehicleMods(jet, 16) - 1, false)
     SetVehicleMod(jet, 12, GetNumVehicleMods(jet, 12) - 1, false)
     SetVehicleMod(jet, 13, GetNumVehicleMods(jet, 13) - 1, false)
@@ -40,14 +47,14 @@ function upgradeJet(jet)
     SetVehicleMod(jet, 15, GetNumVehicleMods(jet, 15) - 1, false)
     SetVehicleTyresCanBurst(jet, false)
 
-    -- שינוי צבע המטוס לכחול
-    SetVehicleColours(jet, 38, 38) -- 38 הוא הצבע הכחול במערכת הצבעים של GTA V
+    -- Change the jet's color to blue
+    SetVehicleColours(jet, 38, 38) -- Blue color
 end
 
--- פונקציה לחיפוש טילים במשחק
+-- Function to check for all missile entities in the game world
 function GetAllMissiles()
     local missiles = {}
-    -- חיפוש אחר כל הרכבים שמזוהים כטילים (צריך לוודא שהמודל הנכון נמצא)
+    -- Look for vehicles that are identified as missiles
     for _, vehicle in ipairs(GetAllVehicles()) do
         if GetEntityModel(vehicle) == missileModel then
             table.insert(missiles, vehicle)
@@ -56,7 +63,7 @@ function GetAllMissiles()
     return missiles
 end
 
--- פונקציה שמחזירה את כל הרכבים במשחק
+-- Function to retrieve all vehicles in the game
 function GetAllVehicles()
     local vehicles = {}
     for vehicle in EnumerateVehicles() do
@@ -65,7 +72,7 @@ function GetAllVehicles()
     return vehicles
 end
 
--- פונקציה לספור את הרכבים במשחק
+-- Function to enumerate all vehicles in the game
 function EnumerateVehicles()
     return coroutine.wrap(function()
         local handle, vehicle = FindFirstVehicle()
@@ -78,7 +85,7 @@ function EnumerateVehicles()
     end)
 end
 
--- פונקציית שיגור מטוסים, בליפים וזיהוי כניסה למרחב
+-- Function to initiate a dogfight by spawning enemy jets
 function initiateDogfight()
     local player = PlayerPedId()
     local playerPos = GetEntityCoords(player)
@@ -88,7 +95,7 @@ function initiateDogfight()
 
     print("Initiating dogfight - spawning enemy jets...")
 
-    -- התראה על שיגור מטוסים
+    -- Alert the player about incoming jets
     TriggerEvent('chat:addMessage', { args = {"^1Alert: Enemy jets are approaching! Prepare yourself!"} })
 
     RequestModel(jetModel)
@@ -97,6 +104,7 @@ function initiateDogfight()
         Citizen.Wait(100)
     end
 
+    -- Spawn 5 enemy jets in a circular formation around the player
     for i = 1, 5 do
         local angle = math.rad((i - 1) * (360 / 5))
         local spawnX = playerPos.x + math.cos(angle) * spawnRadius
@@ -110,10 +118,10 @@ function initiateDogfight()
             table.insert(spawnedJets, {jet = jet, hitCount = 0})
             print("Spawned jet at", spawnX, spawnY, spawnZ)
 
-            -- שינוי צבע הבליפ של המטוס לכחול
+            -- Create a blue blip for the jet
             local jetBlip = AddBlipForEntity(jet)
-            SetBlipSprite(jetBlip, 16) -- אייקון של מטוס
-            SetBlipColour(jetBlip, 3) -- צבע כחול
+            SetBlipSprite(jetBlip, 16) -- Jet icon
+            SetBlipColour(jetBlip, 3) -- Blue color
             SetBlipScale(jetBlip, 0.8)
             BeginTextCommandSetBlipName("STRING")
             AddTextComponentString("Enemy Jet")
@@ -135,20 +143,20 @@ function initiateDogfight()
             return
         end
 
-        -- שדרוג המטוס למקסימום
+        -- Upgrade the jet to maximum capacity
         upgradeJet(jet)
 
-        -- סוגר את הגלגלים ומפעיל מהירות מרבית
+        -- Close the landing gear and set max speed
         ControlLandingGear(jet, 3)
         SetVehicleForwardSpeed(jet, 1000.0)
         SetVehicleForceAfterburner(jet, true)
 
-        -- ביטול חסינות והגבלת שימוש בכלי נשק
-        SetEntityInvincible(jet, false) -- הסרת חסינות
-        SetCurrentPedWeapon(pilot, `WEAPON_VEHICLE_ROCKET`, true) -- טילים בלבד
-        SetPedCanSwitchWeapon(pilot, false) -- מניעת החלפת נשק
+        -- Disable invincibility and restrict weapon switching
+        SetEntityInvincible(jet, false) -- Remove invincibility
+        SetCurrentPedWeapon(pilot, `WEAPON_VEHICLE_ROCKET`, true) -- Only rockets
+        SetPedCanSwitchWeapon(pilot, false) -- Prevent switching weapons
 
-        -- הפעלת תגובה אגרסיבית על השחקן
+        -- Aggressive combat behavior towards the player
         TaskCombatPed(pilot, player, 0, 16)
         SetPedCombatAttributes(pilot, 46, true)
         SetPedCombatAttributes(pilot, 5, true)
@@ -157,7 +165,7 @@ function initiateDogfight()
 
         Citizen.CreateThread(function()
             while DoesEntityExist(jet) and not IsPedDeadOrDying(pilot) do
-                -- ווידוא שהמטוס יתקוף רק עם טילים
+                -- Ensure the jet only uses rockets for attacks
                 SetCurrentPedWeapon(pilot, `WEAPON_VEHICLE_ROCKET`, true)
                 TaskCombatPed(pilot, player, 0, 16)
                 Citizen.Wait(2000)
@@ -170,9 +178,9 @@ function initiateDogfight()
     SetModelAsNoLongerNeeded(jetModel)
     SetModelAsNoLongerNeeded(pilotModel)
 
-    -- טיימר למחיקת כל המטוסים לאחר 80 שניות (דקה ו-20 שניות)
+    -- Timer to delete all jets after 80 seconds (1 minute and 20 seconds)
     Citizen.SetTimeout(70000, function()
-        -- התראה על 10 שניות אחרונות לפני מחיקה
+        -- Alert the player about the 10-second warning before jets disengage
         TriggerEvent('chat:addMessage', { args = {"^1Warning: Enemy jets will disengage in 10 seconds!"} })
     end)
 
@@ -187,7 +195,68 @@ function initiateDogfight()
     })
 end
 
--- זיהוי כניסה למרחב האווירי ושיגור מטוסים
+-- Function to check if the player is within the restricted airspace
+function isPlayerInRangeOfAirspace()
+    local player = PlayerPedId()
+    local playerPos = GetEntityCoords(player)
+    local airspaceCenter = vector3(-2000.0, 3250.0, 0.0) -- Center of the restricted airspace
+
+    local distance = #(playerPos - airspaceCenter) -- Calculate the distance
+
+    if distance > maxDistance then
+        return false
+    else
+        return true
+    end
+end
+
+-- Function to delete all jets when the player leaves the airspace
+function deleteJetsIfOutOfRange()
+    Citizen.CreateThread(function()
+        while true do
+            Citizen.Wait(1000) -- Check every second
+
+            if not isPlayerInRangeOfAirspace() then
+                -- If the player is out of range, jets will disengage
+                print("Player is out of range, jets are disengaging.")
+                deleteAllJets() -- Delete all jets
+                break
+            end
+        end
+    end)
+end
+
+-- Delete all spawned jets
+function deleteAllJets()
+    Citizen.CreateThread(function()
+        print("Attempting to delete all jets...")
+        for _, data in ipairs(spawnedJets) do
+            Citizen.CreateThread(function()
+                while DoesEntityExist(data.jet) do
+                    forceDeleteJet(data.jet)
+                    Citizen.Wait(1000) -- Make sure deletion is continuous
+                end
+            end)
+        end
+        spawnedJets = {} -- Reset the list after deleting all jets
+        print("All jets marked for deletion.")
+    end)
+end
+
+-- Delete individual jet
+function forceDeleteJet(jet)
+    if DoesEntityExist(jet) then
+        NetworkRequestControlOfEntity(jet)
+        Citizen.Wait(10)
+        SetEntityAsMissionEntity(jet, true, true)
+        Citizen.Wait(10)
+        SetEntityAsNoLongerNeeded(jet)
+        Citizen.Wait(10)
+        DeleteEntity(jet)
+    end
+end
+
+-- Monitor player's position in the restricted airspace
 Citizen.CreateThread(function()
     local blip = AddBlipForRadius(-2000.0, 3250.0, 0.0, 1500.0)
     SetBlipHighDetail(blip, true)
@@ -201,54 +270,12 @@ Citizen.CreateThread(function()
 
     while true do
         Citizen.Wait(5000)
-        if isPlayerInPaletoAirspace() and not isInRestrictedAirspace then
+        if isPlayerInRangeOfAirspace() and not isInRestrictedAirspace then
             isInRestrictedAirspace = true
             initiateDogfight()
-        elseif not isPlayerInPaletoAirspace() and isInRestrictedAirspace then
+        elseif not isPlayerInRangeOfAirspace() and isInRestrictedAirspace then
             isInRestrictedAirspace = false
             print("Player exited restricted airspace.")
-        end
-    end
-end)
-
--- מעקב אחרי טילים
-Citizen.CreateThread(function()
-    while true do
-        Citizen.Wait(1000) -- בדוק כל שנייה
-
-        for _, missile in ipairs(trackedMissiles) do
-            if not DoesEntityExist(missile) then
-                print("Missile destroyed or no longer exists:", missile)
-                -- מחיקת הטיל מהרשימה אם הוא הושמד
-                table.remove(trackedMissiles, _)
-            end
-        end
--- פונקציה לבדוק אם השחקן נמצא במרחב האווירי של פליטו ביי
-function isPlayerInPaletoAirspace()
-    local player = PlayerPedId()
-    local playerPos = GetEntityCoords(player)
-
-    -- טווח קואורדינטות המרחב האווירי של פליטו ביי
-    local minX, maxX = -3000.0, -1000.0
-    local minY, maxY = 2000.0, 4500.0
-    local minZ, maxZ = 0.0, 800.0
-
-    -- בדיקת אם השחקן נמצא בתוך המרחב האווירי
-    local inAirspace = playerPos.x > minX and playerPos.x < maxX and playerPos.y > minY and playerPos.y < maxY and playerPos.z > minZ and playerPos.z < maxZ
-
-    -- בודק אם השחקן נמצא במטוס קרב (Lazer או Hydra)
-    local vehicle = GetVehiclePedIsIn(player, false)
-    local isInFighterJet = (vehicle ~= 0 and (GetEntityModel(vehicle) == `Lazer` or GetEntityModel(vehicle) == `Hydra`))
-
-    return inAirspace and isInFighterJet
-end
-
-        -- חיפוש טילים חדשים
-        local missiles = GetAllMissiles() -- פונקציה שתחפש את כל הטילים
-        for _, missile in ipairs(missiles) do
-            if not table.contains(trackedMissiles, missile) then
-                trackMissile(missile)
-            end
         end
     end
 end)
